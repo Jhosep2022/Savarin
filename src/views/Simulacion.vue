@@ -77,7 +77,7 @@
               <tr v-for="(resultado, index) in resultados" :key="index">
                 <td>{{ index + 1 }}</td>
                 <td>{{ resultado.gananciaNeta }}</td>
-                <td>{{ resultado.gananciaNetaSemanas }}</td>
+                <td>{{ resultado.gananciaNetaPromedio }}</td>
                 <td>{{ resultado.costoCompraSemana }}</td>
                 <td>{{ resultado.demandaInsatisfechaMedia }}</td>
                 <td>{{ JSON.stringify(resultado.demandaCervezas) }}</td>
@@ -119,10 +119,10 @@ export default {
     return {
       numSimulaciones: '',
       ms: '',
-      invMaxHuari: 300, 
-      invMaxPacena: 210, 
-      invMaxAmstel: 120, 
-      maxClie: 150, 
+      invMaxHuari: 300, // Original inventory values
+      invMaxPacena: 210,
+      invMaxAmstel: 120,
+      maxClie: 150,
       maxDA: 2,
       pgve: '',
       resultados: [],
@@ -142,60 +142,62 @@ export default {
       this.showDiagrama = true;
     },
     simular() {
-      if (isNaN(this.numSimulaciones) || this.numSimulaciones === '') {
+      if (!this.numSimulaciones || isNaN(parseInt(this.numSimulaciones)) || parseInt(this.numSimulaciones) < 1) {
         alert("Por favor, ingrese un número válido de simulaciones.");
         return;
       }
-      if (isNaN(this.ms) || this.ms === '') {
+      if (!this.ms || isNaN(parseInt(this.ms)) || parseInt(this.ms) < 1) {
         alert("Por favor, ingrese el número de semanas a simular.");
         return;
       }
-      this.resultados = [];
 
-      // Realizar las simulaciones
-      for (let sim = 1; sim <= parseInt(this.numSimulaciones); sim++) {
-        let acumGananciaNeta = 0;
-        let acumCostoCompra = 0;
-        let demandaTotal = {
-          huari: 0,
-          pacena: 0,
-          amstel: 0
+      this.resultados = []; // Limpiar resultados anteriores
+      let simulaciones = parseInt(this.numSimulaciones);
+      let semanas = parseInt(this.ms);
+
+      for (let sim = 1; sim <= simulaciones; sim++) {
+        let resultadosSimulacion = {
+          simulacion: sim,
+          gananciaNeta: 0,
+          gananciaNetaPromedio: 0,
+          costoTotal: 0,
+          costoCompraSemana: 0,
+          demandaInsatisfecha: 0,
+          demandaInsatisfechaMedia: 0,
+          demandaCervezas: { Huari: 0, Pacena: 0, Amstel: 0 }
         };
 
-        // Simular cada semana
-        for (let semana = 1; semana <= parseInt(this.ms); semana++) {
-          const ventasHuari = Math.min(this.generarDemanda(), this.invMaxHuari);
-          const ventasPacena = Math.min(this.generarDemanda(), this.invMaxPacena);
-          const ventasAmstel = Math.min(this.generarDemanda(), this.invMaxAmstel);
+        let inventarios = {
+          Huari: this.invMaxHuari,
+          Pacena: this.invMaxPacena,
+          Amstel: this.invMaxAmstel
+        };
 
-          const ingresosHuari = ventasHuari * this.precioVentaHuari;
-          const ingresosPacena = ventasPacena * this.precioVentaPacena;
-          const ingresosAmstel = ventasAmstel * this.precioVentaAmstel;
+        for (let semana = 1; semana <= semanas; semana++) {
+          let cervezaSeleccionada = this.seleccionarCerveza();
+          let cantidadCervezas = this.seleccionarCantidadCervezas();
+          let demanda = this.generarDemanda();
 
-          const costoHuari = ventasHuari * this.precioCompraHuari;
-          const costoPacena = ventasPacena * this.precioCompraPacena;
-          const costoAmstel = ventasAmstel * this.precioCompraAmstel;
+          if (cantidadCervezas > inventarios[cervezaSeleccionada]) {
+            cantidadCervezas = inventarios[cervezaSeleccionada];
+          }
 
-          // Acumular resultados
-          acumGananciaNeta += (ingresosHuari + ingresosPacena + ingresosAmstel - costoHuari - costoPacena - costoAmstel);
-          acumCostoCompra += (costoHuari + costoPacena + costoAmstel);
+          let ingresos = this[`precioVenta${cervezaSeleccionada}`] * cantidadCervezas;
+          let costo = this[`precioCompra${cervezaSeleccionada}`] * cantidadCervezas;
+          inventarios[cervezaSeleccionada] -= cantidadCervezas;
 
-          demandaTotal.huari += ventasHuari;
-          demandaTotal.pacena += ventasPacena;
-          demandaTotal.amstel += ventasAmstel;
-
-          this.invMaxHuari -= ventasHuari;
-          this.invMaxPacena -= ventasPacena;
-          this.invMaxAmstel -= ventasAmstel;
+          resultadosSimulacion.gananciaNeta += ingresos - costo;
+          resultadosSimulacion.costoTotal += costo;
+          resultadosSimulacion.demandaInsatisfecha += demanda - cantidadCervezas;
+          resultadosSimulacion.demandaCervezas[cervezaSeleccionada] += demanda - cantidadCervezas;
         }
 
-        // Añadir los resultados consolidados de la simulación
-        this.resultados.push({
-          simulacion: sim,
-          gananciaNeta: acumGananciaNeta,
-          costoCompra: acumCostoCompra,
-          demandaCervezas: demandaTotal
-        });
+        // Cálculos finales por simulación
+        resultadosSimulacion.gananciaNetaPromedio = resultadosSimulacion.gananciaNeta / semanas;
+        resultadosSimulacion.costoCompraSemana = resultadosSimulacion.costoTotal / semanas;
+        resultadosSimulacion.demandaInsatisfechaMedia = resultadosSimulacion.demandaInsatisfecha / semanas;
+
+        this.resultados.push(resultadosSimulacion);
       }
 
       this.mostrarTabla = true;
@@ -214,8 +216,27 @@ export default {
       this.mostrarTabla = false;
       this.mensajeLimpieza = false;
     },
+
+    validarEntradas() {
+      return !isNaN(this.numSimulaciones) && this.numSimulaciones !== '' &&
+            !isNaN(this.ms) && this.ms !== '';
+    },
+
     generarDemanda() {
       return Math.floor(Math.random() * this.maxClie) + 1;
+    },
+    seleccionarCerveza() {
+      let r = Math.floor(Math.random() * 100) + 1;
+      if (r <= 33) return 'Pacena';
+      if (r <= 67) return 'Huari';
+      return 'Amstel';
+    },
+    seleccionarCantidadCervezas() {
+      let r = Math.floor(Math.random() * 100) + 1;
+      if (r <= 25) return 1;
+      if (r <= 50) return 2;
+      if (r <= 75) return 3;
+      return 4;
     },
     formatPercentage() {
       let value = this.pgve.replace(/[^0-9.]/g, '');
@@ -245,7 +266,7 @@ export default {
     },
     calcularGananciaNetaSemanas() {
       if (this.resultados.length === 0) return 0;
-      let totalSemanas = this.resultados.reduce((total, res) => total + 1, 0);
+      let totalSemanas = this.resultados.reduce((total) => total + 1, 0);
       return this.calcularGananciaNeta() / totalSemanas;
     },
     calcularCostoCompraSemana() {
