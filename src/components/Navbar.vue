@@ -1,7 +1,9 @@
 <template>
   <v-app-bar app color="white" flat>
     <v-badge color="#D5F0DB" dot>
-      <v-img src="loguito.jpg" contain width="40"></v-img>
+      <v-btn icon @click="$router.push('/')">
+        <v-img src="loguito.jpg" contain width="40"></v-img>
+      </v-btn>
     </v-badge>
 
     <v-toolbar-title class="ml-4">

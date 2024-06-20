@@ -1,5 +1,4 @@
 <template>
-  
   <div class="container">
     <Navbar /> 
     <header class="header">
@@ -20,6 +19,10 @@
     <div class="simulation-parameters">
       <div class="form-section">
         <h2>Parámetros de la Simulación</h2>
+        <div class="form-group">
+          <label for="numSimulaciones">Número de Simulaciones:</label>
+          <input type="number" id="numSimulaciones" v-model="numSimulaciones" min="1" placeholder="Número de simulaciones">
+        </div>
         <div class="form-group">
           <label for="ms">Máximo de Semanas a Simular [MS]:</label>
           <input type="text" id="ms" v-model="ms" placeholder="MS" pattern="[0-9]*[.,]?[0-9]+" title="Ingrese un número válido">
@@ -46,7 +49,7 @@
         </div>
         <div class="form-group">
           <label for="pgve">Porcentaje Ganancia por Venta del Empleado [PGVE]:</label>
-          <input type="text" id="pgve" v-model="pgve" placeholder="PGVE" pattern="[0-9]*[.,]?[0-9]+" title="Ingrese un número válido">
+          <input type="text" id="pgve" v-model="pgve" placeholder="Ejemplo: 10%" @blur="formatPercentage">
         </div>
         <div class="buttons">
           <button class="simular-button" @click="simular">Simular</button>
@@ -62,23 +65,38 @@
           <table v-if="resultados.length > 0" class="result-table">
             <thead>
               <tr>
-                <th>Semana</th>
-                <th>Cervezas Vendidas</th>
+                <th>Número de simulación</th>
+                <th>Ganancia Neta</th>
+                <th>Ganancia Neta Promedio por Semana</th>
+                <th>Costo de Compra por Semana</th>
+                <th>Demanda Insatisfecha Media General</th>
+                <th>Demanda Insatisfecha de Cada Cerveza</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="(resultado, index) in resultados" :key="index">
                 <td>{{ index + 1 }}</td>
-                <td>{{ resultado }}</td>
-                <td>{{ resultado }}</td>
-                <td>{{ resultado }}</td>
-                <td>{{ resultado }}</td>
+                <td>{{ resultado.gananciaNeta }}</td>
+                <td>{{ resultado.gananciaNetaSemanas }}</td>
+                <td>{{ resultado.costoCompraSemana }}</td>
+                <td>{{ resultado.demandaInsatisfechaMedia }}</td>
+                <td>{{ JSON.stringify(resultado.demandaCervezas) }}</td>
               </tr>
             </tbody>
           </table>
         </div>
         <button class="descargar-button" @click="descargarExcel">Descargar Resultados en Excel</button>
       </div>
+    </div>
+    <div class="additional-results">
+      <ResultadosSimulacion
+        :visible="mostrarTabla"
+        :gananciaNeta="calcularGananciaNeta()"
+        :gananciaNetaSemanas="calcularGananciaNetaSemanas()"
+        :costoCompraSemana="calcularCostoCompraSemana()"
+        :demandaInsatisfechaMedia="calcularDemandaInsatisfechaMedia()"
+        :demandaCervezas="calcularDemandaCervezas()"
+      />
     </div>
   </div>
 </template>
@@ -88,25 +106,35 @@ import VariablesDeEntorno from '../components/VariablesDeEntorno';
 import DiagramaDeFlujoModal from '../components/DiagramaDeFlujoModal';
 import { utils, writeFile } from 'xlsx';
 import Navbar from "../components/Navbar";
+import ResultadosSimulacion from "../components/ResultadosSimulacion";
+
 export default {
   components: {
     VariablesDeEntorno,
     DiagramaDeFlujoModal,
-    Navbar
+    Navbar,
+    ResultadosSimulacion
   },
   data() {
     return {
+      numSimulaciones: '',
       ms: '',
-      invMaxHuari: '',
-      invMaxPacena: '',
-      invMaxAmstel: '',
-      maxClie: '',
-      maxDA: '2',
+      invMaxHuari: 300, 
+      invMaxPacena: 210, 
+      invMaxAmstel: 120, 
+      maxClie: 150, 
+      maxDA: 2,
       pgve: '',
       resultados: [],
       mostrarTabla: false,
       mensajeLimpieza: false,
-      showDiagrama: false
+      showDiagrama: false,
+      precioVentaHuari: 23,
+      precioVentaPacena: 20,
+      precioVentaAmstel: 24,
+      precioCompraHuari: 14.5,
+      precioCompraPacena: 12,
+      precioCompraAmstel: 13
     };
   },
   methods: {
@@ -114,49 +142,132 @@ export default {
       this.showDiagrama = true;
     },
     simular() {
-      if (isNaN(this.ms) || isNaN(this.invMaxHuari) || isNaN(this.invMaxPacena) || isNaN(this.invMaxAmstel) || isNaN(this.maxClie) || isNaN(this.maxDA) || isNaN(this.pgve)) {
-        alert("Por favor, ingrese solo números en los campos.");
+      if (isNaN(this.numSimulaciones) || this.numSimulaciones === '') {
+        alert("Por favor, ingrese un número válido de simulaciones.");
         return;
       }
-
-      const cervezasPorSemana = (parseFloat(this.invMaxHuari) + parseFloat(this.invMaxPacena) + parseFloat(this.invMaxAmstel)) * parseFloat(this.maxClie) * parseFloat(this.maxDA) * parseFloat(this.pgve) / 100;
-
+      if (isNaN(this.ms) || this.ms === '') {
+        alert("Por favor, ingrese el número de semanas a simular.");
+        return;
+      }
       this.resultados = [];
 
-      for (let semana = 1; semana <= parseFloat(this.ms); semana++) {
-        this.resultados.push(cervezasPorSemana);
+      // Realizar las simulaciones
+      for (let sim = 1; sim <= parseInt(this.numSimulaciones); sim++) {
+        let acumGananciaNeta = 0;
+        let acumCostoCompra = 0;
+        let demandaTotal = {
+          huari: 0,
+          pacena: 0,
+          amstel: 0
+        };
+
+        // Simular cada semana
+        for (let semana = 1; semana <= parseInt(this.ms); semana++) {
+          const ventasHuari = Math.min(this.generarDemanda(), this.invMaxHuari);
+          const ventasPacena = Math.min(this.generarDemanda(), this.invMaxPacena);
+          const ventasAmstel = Math.min(this.generarDemanda(), this.invMaxAmstel);
+
+          const ingresosHuari = ventasHuari * this.precioVentaHuari;
+          const ingresosPacena = ventasPacena * this.precioVentaPacena;
+          const ingresosAmstel = ventasAmstel * this.precioVentaAmstel;
+
+          const costoHuari = ventasHuari * this.precioCompraHuari;
+          const costoPacena = ventasPacena * this.precioCompraPacena;
+          const costoAmstel = ventasAmstel * this.precioCompraAmstel;
+
+          // Acumular resultados
+          acumGananciaNeta += (ingresosHuari + ingresosPacena + ingresosAmstel - costoHuari - costoPacena - costoAmstel);
+          acumCostoCompra += (costoHuari + costoPacena + costoAmstel);
+
+          demandaTotal.huari += ventasHuari;
+          demandaTotal.pacena += ventasPacena;
+          demandaTotal.amstel += ventasAmstel;
+
+          this.invMaxHuari -= ventasHuari;
+          this.invMaxPacena -= ventasPacena;
+          this.invMaxAmstel -= ventasAmstel;
+        }
+
+        // Añadir los resultados consolidados de la simulación
+        this.resultados.push({
+          simulacion: sim,
+          gananciaNeta: acumGananciaNeta,
+          costoCompra: acumCostoCompra,
+          demandaCervezas: demandaTotal
+        });
       }
 
       this.mostrarTabla = true;
+    },
+
+    limpiar() {
+      this.numSimulaciones = '';
+      this.ms = '';
+      this.invMaxHuari = 300;
+      this.invMaxPacena = 210;
+      this.invMaxAmstel = 120;
+      this.maxClie = 150;
+      this.maxDA = 2;
+      this.pgve = '';
+      this.resultados = [];
+      this.mostrarTabla = false;
       this.mensajeLimpieza = false;
     },
-    limpiar() {
-      this.ms = '';
-      this.invMaxHuari = '';
-      this.invMaxPacena = '';
-      this.invMaxAmstel = '';
-      this.maxClie = '';
-      this.maxDA = '';
-      this.pgve = '';
-
-      this.resultados = [];
-
-      this.mostrarTabla = false;
-      this.mensajeLimpieza = true;
+    generarDemanda() {
+      return Math.floor(Math.random() * this.maxClie) + 1;
+    },
+    formatPercentage() {
+      let value = this.pgve.replace(/[^0-9.]/g, '');
+      value = parseFloat(value);
+      if (!isNaN(value) && value <= 100) {
+        this.pgve = (value / 100).toFixed(2);
+      } else {
+        this.pgve = '';
+        alert('Please enter a valid percentage value between 0 and 100.');
+      }
     },
     descargarExcel() {
       const ws = utils.json_to_sheet(this.resultados.map((resultado, index) => ({
-        Semana: index + 1,
-        "Cervezas Vendidas": resultado
+        "Número de simulación": index + 1,
+        "Ganancia Neta": resultado.gananciaNeta,
+        "Ganancia Neta Promedio por Semana": resultado.gananciaNetaSemanas,
+        "Costo de Compra por Semana": resultado.costoCompraSemana,
+        "Demanda Insatisfecha Media General": resultado.demandaInsatisfechaMedia,
+        "Demanda Insatisfecha de Cada Cerveza": JSON.stringify(resultado.demandaCervezas)
       })));
-
       const wb = utils.book_new();
-      utils.book_append_sheet(wb, ws, "Resultados");
-      writeFile(wb, "resultados_simulacion.xlsx");
+      utils.book_append_sheet(wb, ws, "Results");
+      writeFile(wb, "simulation_results.xlsx");
+    },
+    calcularGananciaNeta() {
+      return this.resultados.reduce((total, res) => total + (res.ingresosHuari + res.ingresosPacena + res.ingresosAmstel - res.costoHuari - res.costoPacena - res.costoAmstel), 0);
+    },
+    calcularGananciaNetaSemanas() {
+      if (this.resultados.length === 0) return 0;
+      let totalSemanas = this.resultados.reduce((total, res) => total + 1, 0);
+      return this.calcularGananciaNeta() / totalSemanas;
+    },
+    calcularCostoCompraSemana() {
+      if (this.resultados.length === 0) return 0;
+      return this.resultados.reduce((total, res) => total + (res.costoHuari + res.costoPacena + res.costoAmstel), 0) / this.resultados.length;
+    },
+    calcularDemandaInsatisfechaMedia() {
+      let totalDemandasInsatisfechas = this.resultados.reduce((total, res) => total + (this.maxClie - res.ventasHuari - res.ventasPacena - res.ventasAmstel), 0);
+      return totalDemandasInsatisfechas / this.resultados.length;
+    },
+    calcularDemandaCervezas() {
+      let demandaCervezas = {
+        huari: this.resultados.reduce((total, res) => total + res.ventasHuari, 0),
+        pacena: this.resultados.reduce((total, res) => total + res.ventasPacena, 0),
+        amstel: this.resultados.reduce((total, res) => total + res.ventasAmstel, 0)
+      };
+      return demandaCervezas;
     }
   }
 };
 </script>
+
 
 <style scoped>
 .container {
@@ -200,8 +311,9 @@ export default {
   padding: 20px;
   border: 1px solid #ccc;
   border-radius: 8px;
-  width: 600px;
+  width: 900px; 
   color: white;
+  margin-bottom: 20px;
 }
 
 .form-group {
@@ -275,23 +387,23 @@ export default {
 }
 
 .result-section {
+  width: 600px;
   padding: 20px;
   border: 1px solid #ccc;
   border-radius: 8px;
-  margin-left: 20px;
+  background-color: #fff;
 }
 
 .result-table {
+  min-width: 3000px; 
   width: 100%;
   border-collapse: collapse;
-  margin-top: 20px;
 }
 
-.result-table th,
-.result-table td {
-  border: 1px solid #ccc;
-  padding: 8px;
+.result-table th, .result-table td {
+  padding: 8px; 
   text-align: center;
+  border: 1px solid #ccc;
 }
 
 .result-table th {
@@ -299,7 +411,13 @@ export default {
 }
 
 .table-wrapper {
-  max-height: 429px;
-  overflow-y: auto; 
+  max-height: 450px;
+
+  overflow-x: auto;
+}
+
+.additional-results {
+  margin-top: 20px;
+
 }
 </style>

@@ -7,7 +7,7 @@
         </v-card-actions>
       </v-card-title>
       <v-card-text>
-        <iframe src="../../public/bernardodiramgra.jpg" width="100%" height="500px" style="border: none;" @load="onLoad" @error="onError"></iframe>
+        <iframe src="../../public/Simu.drawio.svg" width="100%" height="500px" style="border: none;" @load="onLoad" @error="onError"></iframe>
       </v-card-text>
     </v-card>
   </template>

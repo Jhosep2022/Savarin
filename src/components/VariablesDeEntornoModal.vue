@@ -93,7 +93,6 @@
       { nombre: 'Maximo de clientes dentro del restaurante', sigla: 'MaxClie', clasificacion: 'Exogena', unidades: '', descripcion: '' },
         { nombre: 'Maximo Dias de Atencion en la semana', sigla: 'MaxDA', clasificacion: 'Exogena', unidades: '', descripcion: '' },
         { nombre: 'Porcentaje Ganacia x Venta del Empleado', sigla: 'PGVE', clasificacion: 'Endogena', unidades: '', descripcion: '' },
-            
         ]
       };
     }
