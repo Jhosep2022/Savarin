@@ -8,7 +8,8 @@
     <div class="header-buttons">
       <VariablesDeEntorno />
       <div class="modal-buttons">
-        <button @click="mostrarDiagrama" class="variables-de-entorno-button">Diagrama de Flujo</button>
+        <button @click="abrirEnlaceExterno" class="variables-de-entorno-button">Diagrama de Flujo</button>
+
         <v-dialog v-model="showDiagrama" max-width="800px" @close="showDiagrama = false">
           <DiagramaDeFlujoModal @close="showDiagrama = false" />
         </v-dialog>
@@ -138,10 +139,15 @@ export default {
     };
   },
   methods: {
+    abrirEnlaceExterno() {
+      window.open('https://drive.google.com/file/d/1aUH0O9ftibxi9H9dG3B36lpH9cxxIxjd/view?usp=sharing', '_blank');
+      },
     mostrarDiagrama() {
       this.showDiagrama = true;
     },
+    
     simular() {
+      // Validaciones iniciales
       if (!this.numSimulaciones || isNaN(parseInt(this.numSimulaciones)) || parseInt(this.numSimulaciones) < 1) {
         alert("Por favor, ingrese un número válido de simulaciones.");
         return;
@@ -150,12 +156,19 @@ export default {
         alert("Por favor, ingrese el número de semanas a simular.");
         return;
       }
+      if (!this.maxDA || isNaN(parseInt(this.maxDA)) || parseInt(this.maxDA) < 1) {
+        alert("Por favor, ingrese el número máximo de días de atención por semana.");
+        return;
+      }
 
       this.resultados = []; // Limpiar resultados anteriores
+      console.log("Iniciando simulaciones...");
       let simulaciones = parseInt(this.numSimulaciones);
       let semanas = parseInt(this.ms);
-
+      let diasAtencion = parseInt(this.maxDA);
+      let demandaInsatisfecha = 0; 
       for (let sim = 1; sim <= simulaciones; sim++) {
+        console.log(`Simulación ${sim} iniciada...`);
         let resultadosSimulacion = {
           simulacion: sim,
           gananciaNeta: 0,
@@ -174,34 +187,49 @@ export default {
         };
 
         for (let semana = 1; semana <= semanas; semana++) {
-          let cervezaSeleccionada = this.seleccionarCerveza();
-          let cantidadCervezas = this.seleccionarCantidadCervezas();
-          let demanda = this.generarDemanda();
+          for (let dia = 0; dia < diasAtencion; dia++) {
+            let cervezaSeleccionada = this.seleccionarCerveza();
+            let demanda = this.generarDemanda();
+            let cantidadCervezasVendidas = Math.min(demanda, inventarios[cervezaSeleccionada]);
 
-          if (cantidadCervezas > inventarios[cervezaSeleccionada]) {
-            cantidadCervezas = inventarios[cervezaSeleccionada];
+            let ingresos = this[`precioVenta${cervezaSeleccionada}`] * cantidadCervezasVendidas;
+            let costo = this[`precioCompra${cervezaSeleccionada}`] * cantidadCervezasVendidas;
+            inventarios[cervezaSeleccionada] -= cantidadCervezasVendidas;
+
+            resultadosSimulacion.gananciaNeta += ingresos - costo;
+            resultadosSimulacion.costoTotal += costo;
+            
+            if (demanda > cantidadCervezasVendidas) {
+              let demandaInsatisfecha = demanda - cantidadCervezasVendidas;
+              resultadosSimulacion.demandaInsatisfecha += demandaInsatisfecha;
+              resultadosSimulacion.demandaCervezas[cervezaSeleccionada] += demandaInsatisfecha;
+            }
+
+            console.log(`Semana ${semana}, Día ${dia + 1}, Cerveza: ${cervezaSeleccionada}, Cantidad Vendida: ${cantidadCervezasVendidas}, Ingresos: ${ingresos}, Costo: ${costo}, Inventario Restante: ${inventarios[cervezaSeleccionada]}, Demanda Insatisfecha: ${demandaInsatisfecha}`);
+
+            // Verificar y rellenar el inventario si es necesario
+            if (inventarios[cervezaSeleccionada] === 0) {
+              inventarios[cervezaSeleccionada] = this[`invMax${cervezaSeleccionada}`]; // Restablecer al máximo
+              resultadosSimulacion.costoTotal += this[`precioCompra${cervezaSeleccionada}`] * this[`invMax${cervezaSeleccionada}`];
+              console.log(`Reabasteciendo inventario de ${cervezaSeleccionada}`);
+            }
           }
-
-          let ingresos = this[`precioVenta${cervezaSeleccionada}`] * cantidadCervezas;
-          let costo = this[`precioCompra${cervezaSeleccionada}`] * cantidadCervezas;
-          inventarios[cervezaSeleccionada] -= cantidadCervezas;
-
-          resultadosSimulacion.gananciaNeta += ingresos - costo;
-          resultadosSimulacion.costoTotal += costo;
-          resultadosSimulacion.demandaInsatisfecha += demanda - cantidadCervezas;
-          resultadosSimulacion.demandaCervezas[cervezaSeleccionada] += demanda - cantidadCervezas;
         }
 
         // Cálculos finales por simulación
         resultadosSimulacion.gananciaNetaPromedio = resultadosSimulacion.gananciaNeta / semanas;
         resultadosSimulacion.costoCompraSemana = resultadosSimulacion.costoTotal / semanas;
-        resultadosSimulacion.demandaInsatisfechaMedia = resultadosSimulacion.demandaInsatisfecha / semanas;
+        resultadosSimulacion.demandaInsatisfechaMedia = resultadosSimulacion.demandaInsatisfecha / (semanas * diasAtencion);
 
         this.resultados.push(resultadosSimulacion);
+        console.log(`Resultados de la simulación ${sim}:`, resultadosSimulacion);
       }
 
+      console.log("Simulaciones completadas.");
       this.mostrarTabla = true;
     },
+
+
 
     limpiar() {
       this.numSimulaciones = '';
@@ -223,7 +251,7 @@ export default {
     },
 
     generarDemanda() {
-      return Math.floor(Math.random() * this.maxClie) + 1;
+      return Math.floor(Math.random() * (160 - 100 + 1)) + 100;
     },
     seleccionarCerveza() {
       let r = Math.floor(Math.random() * 100) + 1;
@@ -231,12 +259,10 @@ export default {
       if (r <= 67) return 'Huari';
       return 'Amstel';
     },
-    seleccionarCantidadCervezas() {
-      let r = Math.floor(Math.random() * 100) + 1;
-      if (r <= 25) return 1;
-      if (r <= 50) return 2;
-      if (r <= 75) return 3;
-      return 4;
+    seleccionarCantidadCervezas(demanda) {
+      let porcentajeVenta = 0.5; 
+      let cantidadPosible = Math.floor(demanda * porcentajeVenta);
+      return Math.min(cantidadPosible, this.maxClie);
     },
     formatPercentage() {
       let value = this.pgve.replace(/[^0-9.]/g, '');
